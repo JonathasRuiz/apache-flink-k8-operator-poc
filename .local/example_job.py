@@ -26,6 +26,7 @@ values; this file sets them too so a standalone local run behaves identically.
 import os
 
 from pyflink.datastream import StreamExecutionEnvironment
+from pyflink.datastream.state_backend import EmbeddedRocksDBStateBackend
 from pyflink.table import StreamTableEnvironment
 
 
@@ -74,7 +75,7 @@ def main() -> None:
     # flinkConfiguration; setting them here keeps a standalone local run honest.
     env.set_max_parallelism(MAX_PARALLELISM)
     env.enable_checkpointing(30_000)  # 30s
-    env.get_config().set_global_job_parameter("state.backend", "rocksdb")
+    env.set_state_backend(EmbeddedRocksDBStateBackend())
 
     t_env = StreamTableEnvironment.create(env)
     sec = _kafka_security_properties()
@@ -93,7 +94,11 @@ def main() -> None:
             'properties.bootstrap.servers' = '{BOOTSTRAP}',
             {sec}
             'properties.group.id' = 'flink-etl-normalize',
-            'scan.startup.mode' = 'latest-offset',
+            -- Resume from the group's committed offsets; on the very first run
+            -- (no commits yet) start from the beginning, so records published
+            -- before the job came up are not silently skipped.
+            'scan.startup.mode' = 'group-offsets',
+            'properties.auto.offset.reset' = 'earliest',
             'format' = 'json',
             'json.ignore-parse-errors' = 'true'
         )

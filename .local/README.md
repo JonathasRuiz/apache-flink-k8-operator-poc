@@ -20,8 +20,12 @@ your cluster, `helm`, and `python3` with `pip`.
 
 ## 0. Python deps for the local scripts
 
+PyFlink 1.20 needs Python 3.8–3.11 and a JDK 11 or 17 (`JAVA_HOME` set).
+`uv` fetches a prebuilt Python, so nothing has to compile:
+
 ```bash
-pip install kafka-python apache-flink
+uv venv -p 3.9 .venv && source .venv/bin/activate
+uv pip install kafka-python apache-flink==1.20.5
 ```
 
 ## 1. Start local Kafka
@@ -31,6 +35,10 @@ docker compose -f .local/compose.yml up -d
 docker compose -f .local/compose.yml ps          # kafka healthy?
 # Optional UI at http://localhost:8080
 ```
+
+`kafka-init` pre-creates `ambyint-io-raw` and `ambyint-io-normalized` (12
+partitions each) and exits. The Flink Kafka source does not auto-create topics,
+so this must have run before the job starts.
 
 Verify the broker answers on the bootstrap address values-dev.yaml references:
 
@@ -118,6 +126,18 @@ kubectl -n flink port-forward svc/etl-normalize-rest 8081:8081
 #   pipeline.max-parallelism = 720
 #   state.backend = rocksdb
 #   state.checkpoints.dir = file:///flink-checkpoints
+```
+
+### Alternative — run the ETL locally (no cluster)
+
+To check the transform without the in-cluster job, run it against local Kafka
+on a PyFlink mini-cluster. The Kafka SQL connector is not bundled with PyFlink:
+
+```bash
+curl -fLo .local/flink-sql-connector-kafka.jar \
+  https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.3.0-1.20/flink-sql-connector-kafka-3.3.0-1.20.jar
+FLINK_CONNECTOR_JARS=file://$PWD/.local/flink-sql-connector-kafka.jar \
+  python .local/example_job.py          # blocks while the job runs
 ```
 
 ## 5. Publish synthetic load

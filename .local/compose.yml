@@ -44,6 +44,26 @@ services:
       timeout: 10s
       retries: 10
 
+  # One-shot: pre-create the PoC topics. Broker auto-create is not enough — the
+  # Flink Kafka source does NOT trigger it, so a job started before the first
+  # publish fails with UnknownTopicOrPartition. 12 partitions on the source topic
+  # so the autoscaler can actually raise source parallelism (it is capped at the
+  # partition count) up to job.autoscaler.vertex.max-parallelism = 12.
+  kafka-init:
+    image: docker.io/apache/kafka:3.7.0
+    container_name: poc-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for t in ambyint-io-raw ambyint-io-normalized; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server poc-kafka:29092 \
+            --create --if-not-exists --topic "$$t" --partitions 12 --replication-factor 1
+        done
+
   # Optional web UI to eyeball topics/messages during the PoC.
   kafka-ui:
     image: docker.io/provectuslabs/kafka-ui:latest
