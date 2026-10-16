@@ -11,9 +11,13 @@ Design contract (see openspec change add-flink-operator-poc):
   * Kafka connection comes from the ENVIRONMENT, never hardcoded, so the same
     file runs unchanged against local PLAINTEXT Kafka and Aiven SASL_SSL+mTLS.
 
-Run locally for a quick check (needs a local PyFlink install + local Kafka):
-    pip install apache-flink
-    python .local/example_job.py
+Run locally for a quick check (needs Python 3.8-3.11, a local PyFlink install,
+local Kafka, and the Kafka SQL connector jar, which PyFlink does not bundle):
+    pip install apache-flink==1.20.5
+    curl -fLo .local/flink-sql-connector-kafka.jar \
+      https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.3.0-1.20/flink-sql-connector-kafka-3.3.0-1.20.jar
+    FLINK_CONNECTOR_JARS=file://$PWD/.local/flink-sql-connector-kafka.jar \
+      python .local/example_job.py
 
 In-cluster it is submitted by deploy/flink/application-job.yaml (application
 mode). The flinkConfiguration there sets the same state/checkpoint/maxParallelism
@@ -33,6 +37,9 @@ SASL_USERNAME = os.environ.get("KAFKA_SASL_USERNAME", "")
 SASL_PASSWORD = os.environ.get("KAFKA_SASL_PASSWORD", "")
 SOURCE_TOPIC = os.environ.get("SOURCE_TOPIC", "ambyint-io-raw")
 OUTPUT_TOPIC = os.environ.get("OUTPUT_TOPIC", "ambyint-io-normalized")
+# Local runs only: ';'-separated file:// URLs of connector jars. In-cluster the
+# connector lives in /opt/flink/lib of the job image, so this stays unset.
+CONNECTOR_JARS = os.environ.get("FLINK_CONNECTOR_JARS", "")
 
 # Platform-wide, irreversible. Key-group count fixed at first checkpoint.
 MAX_PARALLELISM = 720
@@ -60,6 +67,8 @@ def _kafka_security_properties() -> str:
 
 def main() -> None:
     env = StreamExecutionEnvironment.get_execution_environment()
+    if CONNECTOR_JARS:
+        env.add_jars(*CONNECTOR_JARS.split(";"))
 
     # State backend + durable checkpointing. In-cluster these are also set via
     # flinkConfiguration; setting them here keeps a standalone local run honest.
@@ -112,6 +121,8 @@ def main() -> None:
     # - canonical lower_snake field names
     # - split "<value> <unit>" reading into a typed DOUBLE + unit STRING
     # - pass through tenant/device/event_id, canonical event_time
+    # execute_sql(INSERT) submits asynchronously; wait() keeps the process (and
+    # with it a local mini-cluster) alive so the streaming job keeps running.
     t_env.execute_sql(f"""
         INSERT INTO normalized_out
         SELECT
@@ -122,7 +133,7 @@ def main() -> None:
             SPLIT_INDEX(reading, ' ', 1)                        AS unit,
             Ts                                                  AS event_time
         FROM raw_src
-    """)
+    """).wait()
 
 
 if __name__ == "__main__":

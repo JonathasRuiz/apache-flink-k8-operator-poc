@@ -1,2 +1,5 @@
 openspec/
 .kiro/
+
+# Locally downloaded Flink connector jars
+*.jar
