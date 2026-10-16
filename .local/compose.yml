@@ -1,0 +1,51 @@
+# Local Kafka for the PoC — PLAINTEXT, single broker, KRaft (no ZooKeeper).
+#
+# The bootstrap address this exposes (localhost:9092) is the SAME value
+# deploy/values/values-dev.yaml and deploy/flink/secret-kafka.yaml reference, so
+# the deployed Flink job and these local scripts all reach the same broker.
+#
+#   docker compose -f .local/compose.yml up -d
+#
+# NOTE on networking: the publisher_sim.py and app.py scripts run on your host
+# and connect via localhost:9092. The Flink pods run IN the cluster; on a
+# single-node bare-metal setup where the cluster shares the host network they
+# can also reach localhost:9092. If your cluster cannot resolve the host's
+# localhost, point values-dev.yaml's bootstrap at the host IP / a Service that
+# fronts this broker (documented in .local/README.md).
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: poc-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      # KRaft single-node combined broker+controller
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "broker,controller"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      # Auto-create topics so the sim/job/consumer can run without manual setup.
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # Optional web UI to eyeball topics/messages during the PoC.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: poc-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "poc"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "poc-kafka:9092"
+      DYNAMIC_CONFIG_ENABLED: "true"

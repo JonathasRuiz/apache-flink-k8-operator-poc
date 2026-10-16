@@ -1,0 +1,50 @@
+# Flink Kubernetes Operator — Helm values (dev / bare-metal)
+#
+# Passed to `helm install flink-kubernetes-operator ... -f values-dev.yaml`.
+# These are OPERATOR values, not job values. Per-job config (Kafka, checkpoints,
+# maxParallelism) lives in the FlinkDeployment manifests under deploy/flink/.
+
+# Operator image. Pin to the operator version whose Helm chart you installed.
+image:
+  repository: ghcr.io/apache/flink-kubernetes-operator
+  tag: "1.10.0"
+
+# Watch only the "flink" namespace on the PoC (least surprise, least RBAC).
+watchNamespaces:
+  - flink
+
+# Modest operator footprint for a 3-node bare-metal cluster.
+operatorPod:
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+# Default operator-level Flink configuration applied to all FlinkDeployments
+# unless a deployment overrides it. The AUTOSCALER lives here: it is the
+# operator's built-in autoscaler, the only thing that scales TaskManagers.
+# No HPA/KEDA anywhere (see docs/promotion.md).
+defaultConfiguration:
+  create: true
+  append: true
+  flink-conf.yaml: |
+    # --- Autoscaler (operator built-in) -------------------------------------
+    # Enabled globally; each job still needs job.autoscaler.* in its own spec
+    # to opt in to active rescaling. See application-job.yaml.
+    kubernetes.operator.job.autoscaler.enabled: true
+    kubernetes.operator.job.autoscaler.stabilization.interval: 1m
+    kubernetes.operator.job.autoscaler.metrics.window: 5m
+    # How aggressively to target utilization before scaling out.
+    kubernetes.operator.job.autoscaler.target.utilization: "0.6"
+    kubernetes.operator.job.autoscaler.target.utilization.boundary: "0.2"
+
+    # --- Reconciliation ------------------------------------------------------
+    kubernetes.operator.reconcile.interval: 15s
+    kubernetes.operator.observer.progress-check.interval: 10s
+
+# The webhook requires cert-manager (installed first — see install.md).
+webhook:
+  create: true

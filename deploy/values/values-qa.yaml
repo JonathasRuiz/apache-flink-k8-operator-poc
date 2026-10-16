@@ -1,0 +1,53 @@
+# Per-environment values — QA (EKS)  [DOCUMENTED STUB]
+#
+# Same structure as values-dev.yaml. Only values differ. This is a stub for the
+# EKS phase: it documents the target shape, it is NOT production-hardened and is
+# not exercised by the bare-metal PoC run.
+#
+# Promotion from dev = change the marked (<<) lines only. No manifest or job
+# code changes. See docs/promotion.md for the full swap map.
+
+env: qa
+
+flink:
+  image: "flink:1.20"
+  maxParallelism: 720            # <- SAME as dev, forever (irreversible)
+  parallelism: 2
+
+  stateBackend: rocksdb
+  checkpoints:
+    dir: "s3://ambyint-flink-qa/flink-checkpoints"       # << was file:///
+    savepointsDir: "s3://ambyint-flink-qa/flink-savepoints" # << was file:///
+    interval: "30s"
+  # No PVC on EKS — object storage replaces it. Left unset deliberately.
+  checkpointPvcName: ""
+  # S3 access is via IRSA (pod identity), NOT static keys. The service account
+  # the JobManager/TaskManagers run under is annotated with the IAM role ARN.
+  serviceAccount:
+    name: flink
+    # eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/flink-qa-checkpoints
+
+  taskManager:
+    resource:
+      cpu: 2
+      memory: "4096m"
+    numberOfTaskSlots: 2
+  jobManager:
+    resource:
+      cpu: 1
+      memory: "2048m"
+
+  autoscaler:
+    enabled: true
+    scalingEnabled: true
+    # On EKS the node supplier (cluster-autoscaler/Karpenter) adds nodes, so the
+    # ceiling can be far higher than the 3-node bare-metal cap.
+    vertexMaxParallelism: 120
+
+kafka:
+  bootstrapServers: "<aiven-qa-host>:<port>"   # << was localhost:9092
+  securityProtocol: "SASL_SSL"                 # << was PLAINTEXT
+  secretName: "kafka-connection"               # same name, SASL_SSL+mTLS contents
+  topics:
+    source: "ambyint-io-raw"
+    output: "ambyint-io-normalized"

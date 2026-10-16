@@ -1,0 +1,40 @@
+# Session-mode FlinkDeployment — shared cluster for scattered small jobs.
+#
+# Session mode = ONE JobManager + shared TaskManagers that MANY light,
+# stateless jobs are submitted to. It bin-packs small jobs cheaply. The operator
+# autoscaler is NOT used here (autoscaling a single job on shared TMs is muddy);
+# heavy/autoscaled jobs use application mode (application-job.yaml) instead.
+#
+# This same manifest also doubles as the operator reconciliation smoke test
+# (see deploy/operator/install.md step 3): no job jar is required to bring it up.
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: flink-session-cluster
+  namespace: flink
+  labels:
+    app.kubernetes.io/part-of: flink-operator-poc
+    workload-class: scattered-small-jobs
+spec:
+  image: flink:1.20
+  flinkVersion: v1_20
+  flinkConfiguration:
+    # Same irreversible platform standard, so any job submitted here is
+    # forward-compatible with application-mode jobs and EKS.
+    pipeline.max-parallelism: "720"
+    state.backend: rocksdb
+    taskmanager.numberOfTaskSlots: "2"
+  serviceAccount: flink
+  jobManager:
+    resource:
+      cpu: 1
+      memory: "1024m"
+  taskManager:
+    resource:
+      cpu: 1
+      memory: "2048m"
+  # NOTE: no `job:` block. A session cluster hosts jobs submitted separately,
+  # e.g.:
+  #   kubectl exec -it <session-jobmanager-pod> -n flink -- \
+  #     flink run -py /path/to/small_job.py
+  # or via a FlinkSessionJob resource pointing at this cluster.

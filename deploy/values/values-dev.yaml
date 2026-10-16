@@ -1,0 +1,59 @@
+# Per-environment values — DEV (bare-metal PoC)
+#
+# These values parameterize the Flink WORKLOADS (application-job.yaml,
+# session-cluster.yaml) and the local test harness. dev/qa/prod share the SAME
+# manifest structure; only the values below change across environments.
+#
+# This file is the single source of truth for the dev environment. It is also
+# the contract the .local harness reads from (same Kafka bootstrap address).
+
+env: dev
+
+flink:
+  image: "flink:1.20"          # base; the PoC job runs PyFlink on this line
+  # Irreversible, platform-wide. Key-group count, fixed at first checkpoint.
+  maxParallelism: 720
+  # Starting job parallelism; the autoscaler raises this under load, bounded by
+  # autoscaler.vertexMaxParallelism below.
+  parallelism: 2
+
+  stateBackend: rocksdb
+  checkpoints:
+    # Durable target. dev = PVC via local-path (file://). qa/prod swap to s3://.
+    dir: "file:///flink-checkpoints"
+    savepointsDir: "file:///flink-savepoints"
+    interval: "30s"
+  # PVC that provides the file:// durable store (see checkpoint-pvc.yaml).
+  checkpointPvcName: flink-checkpoints
+
+  # TaskManager sizing. PyFlink runs a Python UDF process ALONGSIDE the JVM TM,
+  # so process.size must budget for it (not JVM-only). This footprint sets how
+  # many TMs fit on the 3 nodes and therefore bounds the autoscaler ceiling.
+  taskManager:
+    resource:
+      cpu: 1
+      memory: "2048m"          # taskmanager.memory.process.size
+    numberOfTaskSlots: 2
+  jobManager:
+    resource:
+      cpu: 1
+      memory: "1024m"
+
+  autoscaler:
+    enabled: true
+    scalingEnabled: true       # dev: actively rescale so we can SEE it work
+    # LOGICAL ceiling. Keep below the HARDWARE ceiling (TMs x slots that fit on
+    # 3 nodes). Tune after measuring the PyFlink TM footprint (see promotion.md).
+    vertexMaxParallelism: 12
+
+kafka:
+  # Bootstrap address. The .local harness and the Flink job both resolve Kafka
+  # from here. Swap this one line for the Aiven host:port in qa/prod.
+  bootstrapServers: "localhost:9092"
+  securityProtocol: "PLAINTEXT"   # qa/prod: SASL_SSL
+  # Secret name holding credentials. In dev the Secret is a PLAINTEXT placeholder
+  # (no real creds). In qa/prod it carries SASL_SSL + mTLS material.
+  secretName: "kafka-connection"
+  topics:
+    source: "ambyint-io-raw"
+    output: "ambyint-io-normalized"

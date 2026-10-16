@@ -1,0 +1,91 @@
+# Application-mode FlinkDeployment — the demo ETL job.
+#
+# Application mode = a DEDICATED JobManager + TaskManager(s) for ONE job. This is
+# the mode the operator autoscaler works cleanly in: it rescales by redeploying
+# this job from its latest checkpoint at a new parallelism.
+#
+# Values here mirror deploy/values/values-dev.yaml. On qa/prod the same manifest
+# is used with the s3:// checkpoint dir, SASL_SSL Kafka, and larger sizing — no
+# structural change. See docs/promotion.md.
+apiVersion: flink.apache.org/v1beta1
+kind: FlinkDeployment
+metadata:
+  name: etl-normalize
+  namespace: flink
+  labels:
+    app.kubernetes.io/part-of: flink-operator-poc
+    workload-class: realtime-kafka-to-kafka
+spec:
+  image: flink:1.20
+  flinkVersion: v1_20
+  flinkConfiguration:
+    # --- maxParallelism: irreversible key-group count, fixed at first checkpoint
+    pipeline.max-parallelism: "720"
+
+    # --- State backend: RocksDB working state + durable file:// checkpoints
+    state.backend: rocksdb
+    state.backend.incremental: "true"
+    execution.checkpointing.interval: "30s"
+    state.checkpoints.dir: "file:///flink-checkpoints"
+    state.savepoints.dir: "file:///flink-savepoints"
+
+    # --- Slots per TaskManager
+    taskmanager.numberOfTaskSlots: "2"
+
+    # --- Autoscaler: opt THIS job into active rescaling, bounded.
+    # vertexMaxParallelism is the LOGICAL ceiling; keep it below the hardware
+    # ceiling (TMs x slots that fit on 3 nodes) so scaling settles instead of
+    # leaving pods Pending. Tune after measuring the PyFlink TM footprint.
+    job.autoscaler.enabled: "true"
+    job.autoscaler.scaling.enabled: "true"
+    job.autoscaler.vertex.max-parallelism: "12"
+    job.autoscaler.target.utilization: "0.6"
+  serviceAccount: flink
+  jobManager:
+    resource:
+      cpu: 1
+      memory: "1024m"
+  taskManager:
+    resource:
+      # PyFlink runs a Python UDF process beside the JVM TM — process.size must
+      # budget for it. This per-pod footprint bounds how many TMs fit on 3 nodes.
+      cpu: 1
+      memory: "2048m"
+  podTemplate:
+    spec:
+      # local-path checkpoints are node-local (RWO). Pin JM + TMs to the same
+      # node for the PoC so they share the file:// checkpoint PVC. On EKS (s3://)
+      # this pinning is removed — object storage is shared across nodes.
+      # nodeSelector:
+      #   kubernetes.io/hostname: <your-node-name>
+      containers:
+        - name: flink-main-container
+          env:
+            # Kafka connection comes from the Secret, never hardcoded in the job.
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom: { secretKeyRef: { name: kafka-connection, key: KAFKA_BOOTSTRAP_SERVERS } }
+            - name: KAFKA_SECURITY_PROTOCOL
+              valueFrom: { secretKeyRef: { name: kafka-connection, key: KAFKA_SECURITY_PROTOCOL } }
+            - name: SOURCE_TOPIC
+              value: "ambyint-io-raw"
+            - name: OUTPUT_TOPIC
+              value: "ambyint-io-normalized"
+          volumeMounts:
+            - name: flink-checkpoints
+              mountPath: /flink-checkpoints
+      volumes:
+        - name: flink-checkpoints
+          persistentVolumeClaim:
+            claimName: flink-checkpoints
+  job:
+    # In the PoC the ETL logic is .local/example_job.py. Package it into the
+    # image (or mount it) and point jarURI at the PyFlink entrypoint. The
+    # pyFiles/entryClass wiring below is the application-mode PyFlink pattern.
+    jarURI: "local:///opt/flink/opt/flink-python-1.20.jar"
+    entryClass: "org.apache.flink.client.python.PythonDriver"
+    args:
+      - "-py"
+      - "/opt/flink/usrlib/example_job.py"
+    parallelism: 2
+    upgradeMode: savepoint      # rescale/upgrade restores from savepoint/checkpoint
+    state: running

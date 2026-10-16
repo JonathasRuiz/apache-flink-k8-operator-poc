@@ -1,0 +1,48 @@
+# Per-environment values — PROD (EKS)  [DOCUMENTED STUB]
+#
+# Same structure as values-dev.yaml / values-qa.yaml. Only values differ. This
+# is a stub for the EKS phase: it documents the target shape with prod sizing,
+# it is NOT production-hardened and is not exercised by the bare-metal PoC run.
+#
+# Promotion from qa = larger sizing + prod endpoints/buckets. No manifest or job
+# code changes. See docs/promotion.md for the full swap map.
+
+env: prod
+
+flink:
+  image: "flink:1.20"
+  maxParallelism: 720            # <- SAME as dev/qa, forever (irreversible)
+  parallelism: 4
+
+  stateBackend: rocksdb
+  checkpoints:
+    dir: "s3://ambyint-flink-prod/flink-checkpoints"
+    savepointsDir: "s3://ambyint-flink-prod/flink-savepoints"
+    interval: "30s"
+  checkpointPvcName: ""
+  serviceAccount:
+    name: flink
+    # eks.amazonaws.com/role-arn: arn:aws:iam::<acct>:role/flink-prod-checkpoints
+
+  taskManager:
+    resource:
+      cpu: 4
+      memory: "8192m"
+    numberOfTaskSlots: 4
+  jobManager:
+    resource:
+      cpu: 2
+      memory: "4096m"
+
+  autoscaler:
+    enabled: true
+    scalingEnabled: true
+    vertexMaxParallelism: 360    # headroom under the 720 key-group ceiling
+
+kafka:
+  bootstrapServers: "<aiven-prod-host>:<port>"
+  securityProtocol: "SASL_SSL"
+  secretName: "kafka-connection"
+  topics:
+    source: "ambyint-io-raw"
+    output: "ambyint-io-normalized"

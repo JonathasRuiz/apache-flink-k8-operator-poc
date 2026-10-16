@@ -1,0 +1,25 @@
+# Durable checkpoint/savepoint storage for the PoC.
+#
+# RocksDB working state lives on each TaskManager's local disk (emptyDir).
+# CHECKPOINTS are different: they must survive pod restarts so the operator
+# autoscaler can rescale a job from its latest checkpoint. On bare-metal we use
+# a PVC provisioned by local-path-provisioner, addressed via file:///.
+#
+# LIMITATION: local-path volumes are node-local (ReadWriteOnce). The JobManager
+# and TaskManagers that share this checkpoint dir must therefore land on the
+# SAME node (see application-job.yaml nodeSelector/affinity notes). On EKS this
+# limitation disappears because checkpoints move to s3:// (shared object store).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flink-checkpoints
+  namespace: flink
+  labels:
+    app.kubernetes.io/part-of: flink-operator-poc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi
