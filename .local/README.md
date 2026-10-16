@@ -35,7 +35,7 @@ docker compose -f .local/compose.yml ps          # kafka healthy?
 Verify the broker answers on the bootstrap address values-dev.yaml references:
 
 ```bash
-docker exec poc-kafka kafka-topics.sh --bootstrap-server localhost:9092 --list
+docker exec poc-kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
 ## 2. Cluster prerequisites
