@@ -66,7 +66,7 @@ kubectl -n cert-manager get pods                 # all 3 Running before continui
 
 ```bash
 helm repo add flink-operator-repo \
-  https://downloads.apache.org/flink/flink-kubernetes-operator-1.10.0/
+  https://archive.apache.org/dist/flink/flink-kubernetes-operator-1.10.0/
 helm repo update
 helm install flink-kubernetes-operator \
   flink-operator-repo/flink-kubernetes-operator \

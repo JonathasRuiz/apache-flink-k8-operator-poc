@@ -38,8 +38,10 @@ defaultConfiguration:
     kubernetes.operator.job.autoscaler.stabilization.interval: 1m
     kubernetes.operator.job.autoscaler.metrics.window: 5m
     # How aggressively to target utilization before scaling out.
-    kubernetes.operator.job.autoscaler.target.utilization: "0.6"
-    kubernetes.operator.job.autoscaler.target.utilization.boundary: "0.2"
+    # No quotes: this block is raw flink-conf, so quotes become part of the
+    # value and the operator webhook rejects "0.6" as a non-number.
+    kubernetes.operator.job.autoscaler.target.utilization: 0.6
+    kubernetes.operator.job.autoscaler.target.utilization.boundary: 0.2
 
     # --- Reconciliation ------------------------------------------------------
     kubernetes.operator.reconcile.interval: 15s

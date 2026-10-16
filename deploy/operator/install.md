@@ -41,10 +41,11 @@ webhook setup otherwise.
 
 ```bash
 # The operator chart is published to a versioned path. Pick a release from
-# https://downloads.apache.org/flink/flink-kubernetes-operator-<version>/ and
-# use its chart URL. Example with 1.10.0:
+# https://archive.apache.org/dist/flink/flink-kubernetes-operator-<version>/ and
+# use its chart URL (downloads.apache.org only keeps the latest releases, so
+# use the archive for pinned versions). Example with 1.10.0:
 helm repo add flink-operator-repo \
-  https://downloads.apache.org/flink/flink-kubernetes-operator-1.10.0/
+  https://archive.apache.org/dist/flink/flink-kubernetes-operator-1.10.0/
 helm repo update
 
 kubectl create namespace flink   # if not already created
